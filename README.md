@@ -2,22 +2,64 @@
 
 A minimal Flask service that receives JSON payloads and stores them directly in MongoDB.
 
+## Prereqs
+
+- Running Docker daemon
+- Atlas CLI
+- `mongosh`
+- Python 3 + pip
+
 ## Run
 
-Set MongoDB defaults in `.env`:
-
-```
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB=iot
-MONGO_COLLECTION=iphone
-```
+### Set MongoDB
 
 ```bash
+source .env
+make local-up
+make local-connect
+# Once inside the MongoShell run:
+#> use iot
+#> db.createCollection("iphone")
+#> exit
+make vector-index
+
+# Optional to check the vector search index was in fact created:
+# make local-connect
+# Once inside the MongoShell run:
+#> use iot
+#> db.iphone.getSearchIndexes()
+# [
+#   {
+#     id: '6952ea4b27b9674f4515fd43',
+#     name: 'vector_index',
+#     type: 'vectorSearch',
+#     status: 'READY',
+#     queryable: true,
+#     latestVersion: 0,
+#     latestDefinition: {
+#       fields: [
+#         {
+#           type: 'vector',
+#           path: 'embedding',
+#           numDimensions: 512,
+#           similarity: 'cosine'
+#         },
+#         { type: 'filter', path: 'loggingTime' }
+#       ]
+#     }
+#   }
+# ]
+#> exit
+
+
 
 python3 -m venv .venv && source .venv/bin/activate`
 pip install -r requirements.txt`
+```
 
+### Run the App
 
+```bash
 python app.py
 # * Serving Flask app 'app'
 # // other messages
@@ -27,12 +69,12 @@ python app.py
 # 192.168.1.133 - - [29/Dec/2025 13:13:07] "POST /mdb HTTP/1.1" 200 -
 ```
 
-## Check data collected via mongosh
+### (Optional) Check data collected via mongosh
 
 ```bash
-mongosh
-use iot
-db.iphone.findOne()
+make local-connect
+> use iot
+> db.iphone.findOne()
 ```
 
 Sample documents with the values replaced with dummies:
