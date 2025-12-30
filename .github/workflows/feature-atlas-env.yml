@@ -91,7 +91,7 @@ jobs:
             --tier M0
 
           atlas clusters watch "$MONGODB_CLUSTER" --projectId "$PROJECT_ID"
-          
+
       - name: Create database user for app
         shell: bash
         run: |
@@ -143,7 +143,6 @@ jobs:
           echo "Looking up project '$ENV_NAME' in org $MONGODB_ATLAS_ORG_ID"
 
           PROJECTS_JSON="$(atlas projects list \
-            --orgId "$MONGODB_ATLAS_ORG_ID" \
             --output json)"
 
           PROJECT_ID="$(echo "$PROJECTS_JSON" | jq -r --arg NAME "$ENV_NAME" \
@@ -167,5 +166,4 @@ jobs:
 
           echo "Deleting project '$ENV_NAME' (ID: $PROJECT_ID)"
           atlas projects delete "$PROJECT_ID" \
-            --orgId "$MONGODB_ATLAS_ORG_ID" \
             --force
