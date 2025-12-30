@@ -157,6 +157,24 @@ jobs:
           echo "Found project ID: $PROJECT_ID"
           echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Delete cluster (if present)
+        if: steps.find_project.outputs.project_id != ''
+        shell: bash
+        run: |
+          PROJECT_ID="${{ steps.find_project.outputs.project_id }}"
+          ENV_NAME="${{ steps.naming.outputs.env_name }}"
+
+          echo "Checking for cluster '$ENV_NAME' in project $PROJECT_ID"
+          if atlas clusters describe "$ENV_NAME" --projectId "$PROJECT_ID" >/dev/null 2>&1; then
+            echo "Deleting cluster '$ENV_NAME'..."
+            atlas clusters delete "$ENV_NAME" \
+              --projectId "$PROJECT_ID" \
+              --force \
+              --watch
+          else
+            echo "No cluster named '$ENV_NAME' found; skipping."
+          fi
+
       - name: Delete project
         if: steps.find_project.outputs.project_id != ''
         shell: bash
