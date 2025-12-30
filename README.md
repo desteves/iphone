@@ -8,10 +8,12 @@ A minimal Flask service that receives JSON payloads and stores them directly in 
 - Atlas CLI
 - `mongosh`
 - Python 3 + pip
+- Atlas Cloud account (for cloud only)
+- All .env variables properly set.
 
-## Run
+## Run (Local Only)
 
-### Set MongoDB
+### Setup
 
 ```bash
 source .env
@@ -50,8 +52,6 @@ make vector-index
 #   }
 # ]
 #> exit
-
-
 
 python3 -m venv .venv && source .venv/bin/activate`
 pip install -r requirements.txt`
@@ -143,3 +143,31 @@ Sample documents with the values replaced with dummies:
   motionYaw: '-111.222'
 }
 ```
+
+
+## Run (Local App / Cloud Database)
+
+### Setup
+```bash
+source .env
+make cloud-up
+make cloud-access cloud-user
+make cloud-connect
+# Once inside the MongoShell run:
+#> use iot
+#> db.createCollection("iphone")
+#> exit
+make cloud-vector-index
+python3 -m venv .venv && source .venv/bin/activate`
+pip install -r requirements.txt`
+```
+
+## Run (CI/CD)
+
+### Setup
+
+Back your Atlas creds with GitHub Secrets and surface them as Atlas CLI env vars.
+
+Creating a `feature/*` branch will deploy a dedicated Atlas Project / and `M0` cluster. When such branch is deleed, the test cluster is torn down.
+
+See  [`.github/workflows/feature-atlas-env.yml`](./.github/workflows/feature-atlas-env.yml)

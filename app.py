@@ -35,21 +35,18 @@ def handle_mdb():
     Persist a JSON payload directly to MongoDB.
 
     Mongo connection details can be overridden with environment variables:
-    - MONGO_URI
-    - MONGO_DB
-    - MONGO_COLLECTION
+    - MONGODB_URI
+    - MONGODB_DATABASE
+    - MONGODB_COLLECTION
     """
     data = request.get_json()
-    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    database = os.getenv("MONGO_DB", "iot")
-    collection_name = os.getenv("MONGO_COLLECTION", "raw_iphone")
+    mongo_uri = os.getenv("MONGODB_URI")
+    database = os.getenv("MONGODB_DATABASE", "iot")
+    collection_name = os.getenv("MONGODB_COLLECTION", "iphone")
     client = get_mongo_client(mongo_uri)
     collection_ref = client[database][collection_name]
     collection_ref.insert_one(data)
-
     return ""
-
-
 
 if __name__ == "__main__":
     main()

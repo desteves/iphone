@@ -1,0 +1,171 @@
+name: Manage Feature Branch Atlas Environments
+
+on:
+  create:
+  delete:
+
+# permissions:
+#   contents: read
+#   actions: write
+
+env:
+  # Atlas CLI auth/context
+  MONGODB_ATLAS_PUBLIC_API_KEY:  ${{ secrets.ATLAS_PUBLIC_API_KEY }}
+  MONGODB_ATLAS_PRIVATE_API_KEY: ${{ secrets.ATLAS_PRIVATE_API_KEY }}
+  MONGODB_ATLAS_ORG_ID:          ${{ secrets.ATLAS_ORG_ID }}
+  MONGODB_ATLAS_OUTPUT:          json
+
+  # App-facing MongoDB settings (from GitHub Secrets)
+  MONGODB_CLUSTER:    ${{ secrets.MONGODB_CLUSTER }}
+  MONGODB_DATABASE:   ${{ secrets.MONGODB_DATABASE }}
+  MONGODB_COLLECTION: ${{ secrets.MONGODB_COLLECTION }}
+  MONGODB_USERNAME:   ${{ secrets.MONGODB_USERNAME }}
+  MONGODB_PASSWORD:   ${{ secrets.MONGODB_PASSWORD }}
+
+jobs:
+  create-feature-env:
+    name: Create Atlas env for new feature branch
+    runs-on: ubuntu-latest
+    # Only run when a *branch* is created, and it starts with "feature/"
+    if: >
+      github.event_name == 'create' &&
+      github.event.ref_type == 'branch' &&
+      startsWith(github.event.ref, 'feature/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive feature env name from branch
+        id: naming
+        run: |
+          # github.event.ref is like "feature/my-new-thing"
+          BRANCH_REF="${{ github.event.ref }}"
+          SUFFIX="${BRANCH_REF#feature/}"                 # my-new-thing
+          SAFE_SUFFIX="$(echo "$SUFFIX" | sed 's/[^A-Za-z0-9-]/-/g')"
+          ENV_NAME="feature-${SAFE_SUFFIX}"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
+          echo "Computed env name: $ENV_NAME"
+
+      - name: Setup Atlas CLI
+        uses: mongodb/atlas-github-action@v0.2.0
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Create Atlas project for this feature branch
+        id: create_project
+        shell: bash
+        run: |
+          ENV_NAME="${{ steps.naming.outputs.env_name }}"
+          echo "Creating project '$ENV_NAME' in org $MONGODB_ATLAS_ORG_ID"
+
+          PROJECT_JSON="$(atlas projects create "$ENV_NAME" \
+            --orgId "$MONGODB_ATLAS_ORG_ID" \
+            --output json)"
+          echo "$PROJECT_JSON"
+
+          PROJECT_ID="$(echo "$PROJECT_JSON" | jq -r '._id // .id')"
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "Failed to extract project ID from response"
+            exit 1
+          fi
+
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "Created project with ID: $PROJECT_ID"
+
+      - name: Create M0 cluster in project (GCP us-central)
+        shell: bash
+        run: |
+          ENV_NAME="${{ steps.naming.outputs.env_name }}"
+          PROJECT_ID="${{ steps.create_project.outputs.project_id }}"
+
+          echo "Creating M0 cluster '$MONGODB_CLUSTER' in project $PROJECT_ID (GCP CENTRAL_US)"
+
+          atlas clusters create "$MONGODB_CLUSTER" \
+            --projectId "$PROJECT_ID" \
+            --provider GCP \
+            --region CENTRAL_US \
+            --tier M0
+
+          atlas clusters watch "$MONGODB_CLUSTER" --projectId "$PROJECT_ID"
+          
+      - name: Create database user for app
+        shell: bash
+        run: |
+          PROJECT_ID="${{ steps.create_project.outputs.project_id }}"
+          CLUSTER_NAME="${MONGODB_CLUSTER}"
+
+          echo "Creating DB user '$MONGODB_USERNAME' on db '$MONGODB_DATABASE' scoped to cluster '$CLUSTER_NAME'"
+
+          atlas dbusers create \
+            --username "$MONGODB_USERNAME" \
+            --password "$MONGODB_PASSWORD" \
+            --projectId "$PROJECT_ID" \
+            --role "readWrite@$MONGODB_DATABASE" \
+            --scope "$CLUSTER_NAME"
+  delete-feature-env:
+    name: Delete Atlas env for deleted feature branch
+    runs-on: ubuntu-latest
+    # Only run when a *branch* is deleted, and it starts with "feature/"
+    if: >
+      github.event_name == 'delete' &&
+      github.event.ref_type == 'branch' &&
+      startsWith(github.event.ref, 'feature/')
+
+    steps:
+      - name: Derive feature env name from deleted branch
+        id: naming
+        run: |
+          BRANCH_REF="${{ github.event.ref }}"           # e.g. feature/my-new-thing
+          SUFFIX="${BRANCH_REF#feature/}"
+          SAFE_SUFFIX="$(echo "$SUFFIX" | sed 's/[^A-Za-z0-9-]/-/g')"
+          ENV_NAME="feature-${SAFE_SUFFIX}"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
+          echo "Computed env name to delete: $ENV_NAME"
+
+      - name: Setup Atlas CLI
+        uses: mongodb/atlas-github-action@v0.2.0
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Find project by name
+        id: find_project
+        shell: bash
+        run: |
+          ENV_NAME="${{ steps.naming.outputs.env_name }}"
+
+          echo "Looking up project '$ENV_NAME' in org $MONGODB_ATLAS_ORG_ID"
+
+          PROJECTS_JSON="$(atlas projects list \
+            --orgId "$MONGODB_ATLAS_ORG_ID" \
+            --output json)"
+
+          PROJECT_ID="$(echo "$PROJECTS_JSON" | jq -r --arg NAME "$ENV_NAME" \
+            '.results[] | select(.name == $NAME) | .id // .projectId // ."_id"' | head -n1)"
+
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "No project found for '$ENV_NAME'. Nothing to delete."
+            echo "project_id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found project ID: $PROJECT_ID"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Delete project
+        if: steps.find_project.outputs.project_id != ''
+        shell: bash
+        run: |
+          PROJECT_ID="${{ steps.find_project.outputs.project_id }}"
+          ENV_NAME="${{ steps.naming.outputs.env_name }}"
+
+          echo "Deleting project '$ENV_NAME' (ID: $PROJECT_ID)"
+          atlas projects delete "$PROJECT_ID" \
+            --orgId "$MONGODB_ATLAS_ORG_ID" \
+            --force
