@@ -164,15 +164,15 @@ jobs:
           PROJECT_ID="${{ steps.find_project.outputs.project_id }}"
           ENV_NAME="${{ steps.naming.outputs.env_name }}"
 
-          echo "Checking for cluster '$ENV_NAME' in project $PROJECT_ID"
-          if atlas clusters describe "$ENV_NAME" --projectId "$PROJECT_ID" >/dev/null 2>&1; then
-            echo "Deleting cluster '$ENV_NAME'..."
-            atlas clusters delete "$ENV_NAME" \
+          echo "Checking for cluster '$MONGODB_CLUSTER' in project $PROJECT_ID"
+          if atlas clusters describe "$MONGODB_CLUSTER" --projectId "$PROJECT_ID" >/dev/null 2>&1; then
+            echo "Deleting cluster '$MONGODB_CLUSTER'..."
+            atlas clusters delete "$MONGODB_CLUSTER" \
               --projectId "$PROJECT_ID" \
               --force \
               --watch
           else
-            echo "No cluster named '$ENV_NAME' found; skipping."
+            echo "No cluster named '$MONGODB_CLUSTER' found; skipping."
           fi
 
       - name: Delete project
